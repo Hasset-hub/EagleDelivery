@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Eagle Delivery Report</title>
+<style>
+@page { size: letter; margin: 0.55in 0.6in; }
+body { font-family: "Times New Roman", Times, serif; font-size: 10.2pt; line-height: 1.28; color: #111; margin: 0; }
+h1 { font-size: 15pt; margin: 0 0 2px; }
+.meta { font-size: 9.5pt; color: #333; margin-bottom: 6px; border-bottom: 1px solid #999; padding-bottom: 4px; }
+h2 { font-size: 11.5pt; margin: 9px 0 3px; border-bottom: 1px solid #ccc; }
+h3 { font-size: 10.4pt; margin: 6px 0 2px; }
+p { margin: 3px 0; text-align: justify; }
+ul { margin: 2px 0 3px 18px; padding: 0; }
+li { margin: 1px 0; }
+table { border-collapse: collapse; font-size: 9pt; margin: 4px auto; }
+th, td { border-top: 1px solid #aaa; border-bottom: 1px solid #aaa; padding: 1.5px 6px; text-align: center; }
+th { background: #eee; }
+td.l, th.l { text-align: left; }
+.cap { font-size: 8.6pt; color: #333; text-align: center; margin: 1px 0 5px; }
+.row { display: flex; gap: 8px; justify-content: center; align-items: flex-start; }
+.row figure { margin: 0; flex: 1; }
+.row img { width: 100%; }
+pre { font-family: Consolas, "Courier New", monospace; font-size: 7.6pt; line-height: 1.05; margin: 0; }
+.side { display: flex; gap: 14px; align-items: flex-start; }
+.side .txt { flex: 1; }
+code { font-family: Consolas, "Courier New", monospace; font-size: 8.8pt; }
+.avoid { break-inside: avoid; page-break-inside: avoid; }
+</style>
+</head>
+<body>
+
+<h1>Eagle Delivery: Search and Q-Learning for a Campus Delivery Robot</h1>
+<div class="meta">Hasset Admasu &middot; COSC 461/561 Project 1 &middot; Python 3.11 &middot; Repository: github.com/Hasset-hub/EagleDelivery</div>
+
+<h2>Part A: Planning with BFS and A*</h2>
+<p><b>Formulation.</b> <i>State:</i> the robot's cell <code>(row, column)</code> on a traversable square (walkway or building letter).
+<i>Initial state:</i> the start entrance's cell, e.g. S = (1, 1). <i>Actions:</i> UP, DOWN, LEFT, RIGHT.
+<i>Transition model:</i> deterministic; a move shifts the position by one cell, and a move into a wall or off the map leaves the position unchanged
+(search uses <code>campus.neighbors</code>, which only returns moves that change the cell, so no-op moves are never generated).
+<i>Goal test:</i> the state equals the destination entrance's cell; other building letters are ordinary traversable cells.
+<i>Path cost:</i> number of moves, each costing 1. Search sees the complete map.</p>
+<p><b>Why BFS is optimal here.</b> BFS removes nodes in non-decreasing order of depth. Every action costs 1, so depth equals path cost, and the first time the goal is removed from the FIFO frontier it has the fewest moves of any route. Because the state space is finite and BFS keeps a parent table of discovered states, it also terminates on every map.</p>
+<p><b>Manhattan heuristic.</b> <code>h(s) = |r<sub>s</sub> &minus; r<sub>g</sub>| + |c<sub>s</sub> &minus; c<sub>g</sub>|</code>. Each move changes either the row or the column by exactly one, so any route needs at least |&Delta;r| + |&Delta;c| moves. Walls can only make the real route longer, so h never overestimates (admissible). It is also consistent: one move changes h by at most 1, the cost of that move.</p>
+<p><b>Implementation.</b> A* keeps a heap of <code>(f, insertion number, g, state)</code> with f = g + h, so equal-f ties are broken first-in first-out. It stores the best known g and parent for each state. A strictly cheaper route updates both and pushes a new entry. A popped entry whose g is larger than the best known g is stale and is skipped. The goal test happens when a non-stale entry is removed, and a node is counted as expanded when its successors are generated. If start equals goal, it returns <code>[start]</code> with zero expansions; if the frontier empties, it returns <code>None</code>.</p>
+
+<div class="avoid"><table>
+<tr><th>Map</th><th class="l">Delivery task</th><th>BFS route length</th><th>A* route length</th><th>BFS expanded</th><th>A* expanded</th><th>A* saving</th></tr>
+<tr><td>Baseline</td><td class="l">S Student Center &rarr; W Walton Hall</td><td>18</td><td>18</td><td>67</td><td>22</td><td>67%</td></tr>
+<tr><td>Baseline</td><td class="l">L Halle Library &rarr; D Downing Hall</td><td>22</td><td>22</td><td>79</td><td>62</td><td>22%</td></tr>
+<tr><td>Baseline</td><td class="l">H Pray-Harrold &rarr; P Putnam Hall</td><td>16</td><td>16</td><td>41</td><td>16</td><td>61%</td></tr>
+<tr><td>Detour</td><td class="l">S Student Center &rarr; W Walton Hall</td><td>26</td><td>26</td><td>70</td><td>51</td><td>27%</td></tr>
+<tr><td>Detour</td><td class="l">L Halle Library &rarr; D Downing Hall</td><td>22</td><td>22</td><td>65</td><td>60</td><td>8%</td></tr>
+<tr><td>Detour</td><td class="l">H Pray-Harrold &rarr; P Putnam Hall</td><td>16</td><td>16</td><td>41</td><td>16</td><td>61%</td></tr>
+</table>
+<div class="cap">Table 1. BFS vs A* on the six required tasks (<code>results/search/search_results.csv</code>).</div></div>
+
+<p><b>Comparison.</b> BFS and A* returned routes of equal length in all six cases, as expected: both are optimal on unit-cost maps (A* because h is admissible and consistent). A* never expanded more nodes here, but the size of the saving depends on how well h matches the real distance. On H&rarr;P the route is nearly a straight run, h is exact along it, and A* expands only the 16 nodes on the path. On L&rarr;D, h(L) = 14 while the true distance is 22: the wall to Library's right forces a long detour up and around. Every cell whose f is below 22 must still be expanded, so A* saves only 22% (baseline) and 8% (detour). The closure at (3, 6) lengthens S&rarr;W from 18 to 26. The direct route is blocked, the error in h grows, and A*'s saving drops from 67% to 27%. The same closure removes a region BFS used to explore on L&rarr;D, so BFS expands fewer nodes there (79 &rarr; 65). A* is not guaranteed to expand fewer nodes. With a poor heuristic, unlucky tie-breaking among f = C* nodes can make it expand as many as BFS, and each A* expansion also costs more because of the heap.</p>
+
+<h2>Part B: Learning a Delivery Policy with Q-Learning</h2>
+<p><b>Setup.</b> The Q-table is a dictionary keyed by <code>(state, action)</code>, and unseen pairs count as 0.0. <code>epsilon_greedy</code> picks a uniform random action with probability &epsilon;; otherwise it picks uniformly among actions tied for the highest Q-value. <code>q_learning_update</code> uses the target y = r on terminal transitions and y = r + &gamma; max<sub>a'</sub> Q(s', a') otherwise, with unseen actions in the max counting as zero. It then applies Q &larr; Q + &alpha;(y &minus; Q) to one entry. All baseline runs use the starter defaults: 2,000 training episodes, 100 greedy evaluation episodes (&epsilon; = 0, learning frozen), a 200-action limit, &alpha; = 0.3, &gamma; = 0.95, constant &epsilon; = 0.2, no slip, and seeds 0, 1, 2 (9 independent runs). Extra measures were computed from the raw CSVs with <code>analyze_results.py</code> (<code>results/training_metrics.csv</code>).</p>
+
+<div class="avoid"><table>
+<tr><th class="l">Task (optimal)</th><th>Train success</th><th>Timeouts / seed</th><th>First 20-success streak</th><th>First optimal episode</th><th>Steps, last 500 ep.</th><th>Eval success</th><th>Eval steps (every seed)</th><th>Eval return</th></tr>
+<tr><td class="l">S&rarr;W (18)</td><td>99.2%</td><td>17.0</td><td>ep 33&ndash;42</td><td>ep 92&ndash;116</td><td>22.5</td><td>100%</td><td>18</td><td>22</td></tr>
+<tr><td class="l">L&rarr;D (22)</td><td>99.6%</td><td>8.7</td><td>ep 13&ndash;18</td><td>ep 124&ndash;152</td><td>27.7</td><td>100%</td><td>22</td><td>18</td></tr>
+<tr><td class="l">H&rarr;P (16)</td><td>99.2%</td><td>15.3</td><td>ep 33&ndash;40</td><td>ep 49&ndash;73</td><td>20.1</td><td>100%</td><td>16</td><td>24</td></tr>
+</table>
+<div class="cap">Table 2. Baseline Q-learning on the campus map. Ranges span seeds 0&ndash;2; other values are 3-seed means.</div></div>
+
+<div class="side avoid">
+<div class="txt">
+<p><b>Observations.</b> All nine runs learned an optimal greedy policy. Evaluation success was 100% for every seed, and every evaluation episode used exactly the BFS-optimal number of steps (18, 22, 16), giving returns of 40 &minus; L = 22, 18, 24 with zero variance across seeds. Learning is fast. The early episodes hit the 200-action limit, but nearly all timeouts happen within the first ~40 episodes (one H&rarr;P seed had a stray timeout at episode 149). Steps per episode fall below 30 by about episode 90 (H&rarr;P) to 180 (L&rarr;D), as Figure 1 shows. H&rarr;P is learned first because its goal is closest to the start, so random exploration reaches it soonest.</p>
+<p>Training performance stays below evaluation performance because &epsilon; = 0.2 is never decayed. In the last 500 episodes the agent averages 22.5 / 27.7 / 20.1 steps against optima of 18 / 22 / 16. The fraction of training episodes that follow an optimal route is 5.7% / 2.8% / 7.5%. This closely matches the probability that every step of an L-step route picks the greedy action, (1 &minus; 3&epsilon;/4)<sup>L</sup> = 5.4% / 2.8% / 7.4%. The policy itself is optimal; the gap comes only from exploration noise, and setting &epsilon; = 0 in evaluation removes it.</p>
+</div>
+<figure style="margin:0; width:46%"><img src="figures/baseline_steps.png" style="width:100%"><div class="cap">Figure 1. Steps per training episode (50-episode moving mean, averaged over 3 seeds; first 600 episodes).</div></figure>
+</div>
+
+<h2>Part C: Custom Map and an Exploration Experiment</h2>
+<div class="side avoid">
+<pre>###############
+#S...........W#
+#.#####.#####.#
+#.#####.#####.#
+#.#.###.#####.#
+#.#.###.#####.#
+#.#.###.#####.#
+#L...........D#
+#.#####.#####.#
+#.#####.#####.#
+#.#####.#####.#
+#.#####.#####.#
+#.#####.#####.#
+#H.....P......#
+###############</pre>
+<div class="txt">
+<p><b>Map (<code>maps/my_campus.txt</code>, 15 &times; 15).</b> Three vertical corridors (columns 1, 7, 13) cross three horizontal corridors (rows 1, 7, 13). Together they form a grid of rectangular <i>loops</i>, for example S (1,1) &rarr; (1,7) &rarr; (7,7) &rarr; L (7,1) &rarr; S. The <i>dead end</i> is the stub at column 3, rows 4&ndash;6, which opens only from (7,3) on the middle corridor. All six letters appear exactly once and the border is solid.</p>
+<p><b>Route choices for S&rarr;W.</b> The direct route along row 1 takes 12 moves. The alternatives go down a vertical corridor to row 7 and back up column 13: via column 7 (24 moves), via column 1 past L (24 moves), or via row 13 (36 moves). The dead end is reachable only from the alternative routes. A learner that strays down column 1 or 7 can waste moves in the loop or the stub. BFS finds the 12-move route after expanding <b>38</b> nodes, because it spreads down all three corridors. A* finds the same 12-move route expanding only <b>12</b>: h is exact along row 1, and stepping down any corridor raises f by 2.</p>
+</div>
+</div>
+
+<p><b>(i) Question and prediction.</b> <i>How does the exploration rate &epsilon; affect learning speed, training performance, and the quality of the final greedy policy on the custom S&rarr;W task?</i> Prediction before running: &epsilon; = 0.05 would collect the most reward during training but might under-explore, settle on a 24-move loop route, and evaluate below optimal. &epsilon; = 0.5 would explore thoroughly but waste many actions, giving the lowest training return. &epsilon; = 0.2 would sit in between, and all settings would succeed in evaluation.</p>
+<p><b>(iii) Method.</b> Only &epsilon; was changed (0.05, 0.2, 0.5; output folders <code>results/custom_e005</code>, <code>custom_e020</code>, <code>custom_e050</code>). Everything else stayed at the Part B defaults: same map and S&rarr;W task, &alpha; = 0.3, &gamma; = 0.95, slip 0, 2,000 training episodes, 200-action limit, a fresh Q-table for each seed 0, 1, 2, and greedy evaluation (&epsilon; = 0, frozen table) over 100 episodes per seed. <code>summarize_results.py</code> was run on each folder, and <code>analyze_results.py</code> computed the measures below from the raw training and evaluation CSVs.</p>
+
+<div class="avoid"><table>
+<tr><th>&epsilon;</th><th>Train success</th><th>Timeouts / seed</th><th>Total training actions</th><th>First optimal episode</th><th>Steps, last 500 ep.</th><th>Return, last 500 ep.</th><th>Optimal-route share, last 500</th><th>Eval success / steps / return</th></tr>
+<tr><td>0.05</td><td>99.4%</td><td>13.0</td><td>28,950</td><td>ep 30&ndash;42</td><td>12.7</td><td>27.3</td><td>65.3% (pred. 63.2%)</td><td>100% / 12 / 28</td></tr>
+<tr><td>0.20</td><td>99.3%</td><td>13.3</td><td>34,109</td><td>ep 39&ndash;47</td><td>15.1</td><td>24.9</td><td>14.9% (pred. 14.2%)</td><td>100% / 12 / 28</td></tr>
+<tr><td>0.50</td><td>99.2%</td><td>16.0</td><td>53,029</td><td>ep 369&ndash;556</td><td>24.7</td><td>15.3</td><td>0.4% (pred. 0.4%)</td><td>100% / 12 / 28</td></tr>
+</table>
+<div class="cap">Table 3. Custom-map S&rarr;W experiment, 3-seed means (ranges over seeds). "pred." = (1 &minus; 3&epsilon;/4)<sup>12</sup>, the chance that a 12-step episode follows the greedy route throughout.</div></div>
+
+<div class="row avoid">
+<figure><img src="figures/custom_steps.png"><div class="cap">Figure 2. Steps per training episode by &epsilon; (log x-axis, 3-seed mean).</div></figure>
+<figure><img src="figures/custom_late_steps.png"><div class="cap">Figure 3. Late-training steps vs greedy evaluation steps.</div></figure>
+</div>
+
+<p><b>(iv) Findings.</b> In evaluation, &epsilon; made <i>no</i> difference. All nine runs reached 100% success along the 12-move row-1 route (return 28), with zero spread across seeds. The setting mattered only during training. Higher &epsilon; produced longer training episodes (12.7 &rarr; 15.1 &rarr; 24.7 steps over the last 500 episodes), lower training return (27.3 &rarr; 24.9 &rarr; 15.3), and about 1.8&times; more total actions at &epsilon; = 0.5 than at 0.05. The early learning phase was almost identical: the curves in Figure 2 overlap until about episode 80, and the first 20-success streak began between episodes 30 and 38 for every setting. With &epsilon; = 0.5 the agent rarely completed a perfect run (first at episodes 369&ndash;556) even though its greedy policy was already optimal.</p>
+<p><b>(v) Discussion.</b> The prediction about training cost was right; the prediction about under-exploration was wrong. &epsilon; = 0.05 never locked onto a loop route. The reason is that every action costs &minus;1 while unseen Q-values start at 0. Any action the agent has tried along a non-goal path drops below zero, so the greedy rule itself prefers untried actions ("optimism under uncertainty"). That built-in exploration was enough on this small, deterministic map, which made extra random exploration unnecessary. The match between the observed optimal-route share and (1 &minus; 3&epsilon;/4)<sup>12</sup> confirms that the training gap is pure exploration noise rather than a worse policy. A few runs were not perfectly clean. Timeouts were similar at every &epsilon; (13&ndash;16 per seed, mostly in the first ~40 episodes while the table was empty). With &epsilon; = 0.05 none occurred after episode 35, but higher &epsilon; produced isolated late failures, the latest at episode 708 (&epsilon; = 0.2) and 286 (&epsilon; = 0.5), when a run of random actions pushed the robot into a long excursion. Overall, constant &epsilon; mainly sets a trade-off between training cost and robustness. On this map a small &epsilon; was best, but a harder task with sparser rewards, stochastic slips, or longer dead ends would likely need more exploration or a decaying &epsilon;.</p>
+
+</body>
+</html>

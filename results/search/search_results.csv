@@ -1,0 +1,8 @@
+map,map_file,task,start,goal,bfs_route_length,astar_route_length,bfs_expanded,astar_expanded
+Baseline,maps/emu_campus.txt,S->W,Student Center,Walton Hall,18,18,67,22
+Baseline,maps/emu_campus.txt,L->D,Halle Library,Downing Hall,22,22,79,62
+Baseline,maps/emu_campus.txt,H->P,Pray-Harrold,Putnam Hall,16,16,41,16
+Detour,maps/emu_detour.txt,S->W,Student Center,Walton Hall,26,26,70,51
+Detour,maps/emu_detour.txt,L->D,Halle Library,Downing Hall,22,22,65,60
+Detour,maps/emu_detour.txt,H->P,Pray-Harrold,Putnam Hall,16,16,41,16
+Custom,maps/my_campus.txt,S->W,Student Center,Walton Hall,12,12,38,12
